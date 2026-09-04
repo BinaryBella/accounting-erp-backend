@@ -135,17 +135,6 @@ with the Trial Balance and Profit & Loss. Expected result is at the bottom of th
 Base path `/api` · `Content-Type: application/json` · every error is an RFC 7807 `ProblemDetails`.
 All list and report endpoints take query-string parameters (never a body).
 
-### Conventions
-
-- **Paged lists** return `{ "items": [...], "page": 1, "pageSize": 50, "totalCount": 12, "totalPages": 1 }`.
-  Common query params: `page`, `pageSize`, plus per-resource filters (`search`, `isActive`, `status`,
-  `customerId`, `fromDate`, `toDate`, …).
-- **Money** is always a JSON number with 2 decimal places. Dates are `YYYY-MM-DD`.
-- **Amounts are computed server-side.** For invoice/bill lines you send `quantity`, `unitPrice`,
-  `discountPercent`, `taxRatePercent`; the server returns `lineSubTotal`, `lineDiscount`, `lineTax`,
-  `lineTotal` and the header `subTotal / discountAmount / taxAmount / grandTotal`. A `lineTotal` in
-  the request body is ignored.
-
 ### 1 — Chart of accounts
 
 ```http

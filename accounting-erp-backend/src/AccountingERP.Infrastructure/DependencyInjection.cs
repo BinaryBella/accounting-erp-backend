@@ -22,6 +22,10 @@ public static class DependencyInjection
         services.AddScoped<ISupplierRepository, SupplierRepository>();
         services.AddScoped<IJournalRepository, JournalRepository>();
         services.AddScoped<INumberSequenceRepository, NumberSequenceRepository>();
+        services.AddScoped<ISalesInvoiceRepository, SalesInvoiceRepository>();
+        services.AddScoped<IAuditRepository, AuditRepository>();
+
+        services.AddSingleton<IAccountMappingResolver, AccountMappingResolver>();
 
         return services;
     }

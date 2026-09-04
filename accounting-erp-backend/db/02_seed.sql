@@ -3,13 +3,16 @@
    Seed Data: account types, chart of accounts, mappings, payment methods,
    document numbering sequences.
 
-   Run AFTER 01_schema.sql, against the same (empty) database:
-       sqlcmd -S localhost,1433 -U sa -P '<password>' -d SsitAccountingDb -i 02_seed.sql
+   Run AFTER 01_schema.sql:
+       sqlcmd -S localhost,1433 -U sa -P '<password>' -I -i 02_seed.sql
 
    Idempotent: clears its own rows before inserting, so it can be re-run
    safely as long as 01_schema.sql has not also been re-run since (which
    already empties these tables).
    ===================================================================== */
+
+USE AccountingERPDb;
+GO
 
 SET NOCOUNT ON;
 SET ANSI_NULLS ON;

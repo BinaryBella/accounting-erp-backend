@@ -62,43 +62,276 @@ only in `Program.cs` DI registration.
 
 ## Database setup
 
-Run the three scripts **in order** against a fresh database. Pass `sqlcmd -I` — the schema
-has filtered indexes, which need `QUOTED_IDENTIFIER ON` for any DML; the scripts also set it
-themselves, and SSMS / the application connection have it on by default.
+Run the three scripts **in order**. `01_schema.sql` **creates the `AccountingERPDb` database if
+it does not exist** and every script `USE`s it, so no separate `CREATE DATABASE` and no `-d` flag
+are needed. Pass `sqlcmd -I` — the schema has filtered indexes, which need `QUOTED_IDENTIFIER ON`
+for any DML; the scripts also set it themselves, and SSMS / the application connection have it on
+by default.
 
 ```bash
-sqlcmd -S localhost,1433 -U sa -P 'Str0ng!Passw0rd' -I -Q "CREATE DATABASE SsitAccountingDb"
-sqlcmd -S localhost,1433 -U sa -P 'Str0ng!Passw0rd' -I -d SsitAccountingDb -i db/01_schema.sql
-sqlcmd -S localhost,1433 -U sa -P 'Str0ng!Passw0rd' -I -d SsitAccountingDb -i db/02_seed.sql
-sqlcmd -S localhost,1433 -U sa -P 'Str0ng!Passw0rd' -I -d SsitAccountingDb -i db/03_demo_data.sql   # optional
+sqlcmd -S localhost,1433 -U sa -P 'Str0ng!Passw0rd' -I -i db/01_schema.sql   # creates AccountingERPDb + all objects
+sqlcmd -S localhost,1433 -U sa -P 'Str0ng!Passw0rd' -I -i db/02_seed.sql     # reference + seed data
+sqlcmd -S localhost,1433 -U sa -P 'Str0ng!Passw0rd' -I -i db/03_demo_data.sql   # optional opening balances
 ```
 
-`01_schema.sql` and `02_seed.sql` are idempotent (each drops/clears its own objects first),
-so they are safe to re-run while iterating. `03_demo_data.sql` guards against double-insert.
+Using Windows authentication instead: replace `-U sa -P '…'` with `-E`.
+All three scripts are safe to re-run — `01`/`02` drop/clear their own objects first,
+`03` guards against a double insert.
+
+**What the scripts create**
+
+| Script | Contents |
+|---|---|
+| `01_schema.sql` | 16 tables, 16 PK / 24 FK / 32 CHECK / 15 UNIQUE constraints, 15 indexes, 3 table-valued parameter types, 3 triggers (append-only journal lines, posted-invoice lock, posted-bill lock) |
+| `02_seed.sql` | 5 account types · 14-account chart of accounts · 7 account mappings · Cash + Bank payment methods · 5 document-number sequences |
+| `03_demo_data.sql` | *(optional)* one opening-balance journal entry — `DR Cash 100,000 · DR Bank 400,000 · CR Owner's Capital 500,000` |
 
 ## Configuration & run
 
-The API reads the connection string `ConnectionStrings:AccountingDb`.
+The API reads the connection string named **`ConnectionStrings:AccountingDb`**. It can come from
+any standard configuration source; in order of preference:
 
 ```bash
-# preferred: user-secrets (nothing sensitive committed)
+# 1. user-secrets  (nothing sensitive committed)  — recommended
 dotnet user-secrets --project src/AccountingERP.Api \
-  set "ConnectionStrings:AccountingDb" "Server=localhost,1433;Database=SsitAccountingDb;User Id=sa;Password=Str0ng!Passw0rd;TrustServerCertificate=True"
+  set "ConnectionStrings:AccountingDb" "Server=localhost,1433;Database=AccountingERPDb;User Id=sa;Password=Str0ng!Passw0rd;TrustServerCertificate=True"
 
+# 2. environment variable
+setx ConnectionStrings__AccountingDb "Server=localhost,1433;Database=AccountingERPDb;User Id=sa;Password=Str0ng!Passw0rd;TrustServerCertificate=True"
+
+# 3. edit src/AccountingERP.Api/appsettings.Development.json  (a working local default is already there)
+```
+
+`appsettings.json` ships with an **empty** connection string and no credentials.
+`appsettings.Development.json` carries a working local default (Windows-auth / `Trusted_Connection`),
+so on a machine with a local SQL instance you can just run:
+
+```bash
 dotnet run --project src/AccountingERP.Api
 ```
 
-`appsettings.Development.json` carries a working local default (Windows-auth /
-`Trusted_Connection`), so on a machine with a local SQL instance you can just `dotnet run`.
-`appsettings.json` contains **no credentials**.
+| Endpoint | URL (default launch profile) |
+|---|---|
+| Swagger UI | `http://localhost:5006/swagger`  ·  `https://localhost:7165/swagger` |
+| Health check | `GET /health` |
 
-- Swagger UI: `http://localhost:5006/swagger` (or `https://localhost:7165/swagger`)
-- Health: `GET /health`
+Build & test:
+
+```bash
+dotnet build AccountingERP.sln -c Release      # 0 warnings, 0 errors
+dotnet test  AccountingERP.sln                 # xUnit projects are scaffolding only (see Known gaps)
+```
 
 ## Run the demo
 
-Open **`requests/demo.http`** in VS Code (REST Client) or Rider and send the requests top to
-bottom. It performs the brief's §10 scenario and ends with the Trial Balance and P&L.
+Open **`requests/demo.http`** in VS Code (REST Client extension) or JetBrains Rider and send the
+requests top to bottom. It performs the brief's §10 nine-step scenario end to end and finishes
+with the Trial Balance and Profit & Loss. Expected result is at the bottom of this file.
+
+---
+
+## API usage
+
+Base path `/api` · `Content-Type: application/json` · every error is an RFC 7807 `ProblemDetails`.
+All list and report endpoints take query-string parameters (never a body).
+
+### Conventions
+
+- **Paged lists** return `{ "items": [...], "page": 1, "pageSize": 50, "totalCount": 12, "totalPages": 1 }`.
+  Common query params: `page`, `pageSize`, plus per-resource filters (`search`, `isActive`, `status`,
+  `customerId`, `fromDate`, `toDate`, …).
+- **Money** is always a JSON number with 2 decimal places. Dates are `YYYY-MM-DD`.
+- **Amounts are computed server-side.** For invoice/bill lines you send `quantity`, `unitPrice`,
+  `discountPercent`, `taxRatePercent`; the server returns `lineSubTotal`, `lineDiscount`, `lineTax`,
+  `lineTotal` and the header `subTotal / discountAmount / taxAmount / grandTotal`. A `lineTotal` in
+  the request body is ignored.
+
+### 1 — Chart of accounts
+
+```http
+POST /api/accounts
+{ "accountCode": "6000", "accountName": "Marketing Expense", "accountTypeId": 5, "parentAccountId": null }
+→ 201 Created   Location: /api/accounts/15
+```
+
+`accountTypeId`: 1 Asset · 2 Liability · 3 Equity · 4 Revenue · 5 Expense.
+Duplicate `accountCode` → **409**. Deleting an account that is `IsSystem` or has journal lines → **409**
+(soft delete otherwise). `GET /api/account-types` returns the five types with their normal balance.
+
+### 2 — Customers & suppliers
+
+```http
+POST /api/customers
+{ "customerCode": "C001", "name": "XYZ Retail", "contactPerson": "Nimal Perera",
+  "email": "accounts@xyzretail.lk", "phone": "011-2345678", "address": "42 Galle Road, Colombo 03" }
+→ 201 Created
+
+GET  /api/customers?search=xyz&isActive=true&page=1&pageSize=20
+```
+
+Suppliers are identical at `/api/suppliers` with `supplierCode`. Duplicate code → **409**;
+deleting a party that has transactions → **409**.
+
+### 3 — Sales invoice: create → post → show journal entry
+
+```http
+POST /api/sales-invoices
+{
+  "customerId": 1,
+  "invoiceDate": "2026-09-04",
+  "dueDate": "2026-10-04",
+  "notes": "Demo invoice",
+  "lines": [
+    { "description": "Trading goods", "quantity": 1, "unitPrice": 100000.00,
+      "discountPercent": 0, "taxRatePercent": 18, "revenueAccountId": null }
+  ]
+}
+→ 201 Created
+{
+  "salesInvoiceId": 1, "invoiceNumber": "INV-000001", "status": "Draft",
+  "subTotal": 100000.00, "discountAmount": 0.00, "taxAmount": 18000.00,
+  "grandTotal": 118000.00, "amountPaid": 0.00, "outstandingAmount": 118000.00,
+  "lines": [ { "lineNumber": 1, "lineSubTotal": 100000.00, "lineTax": 18000.00,
+              "lineTotal": 118000.00, "revenueAccountCode": "4000" } ],
+  "allocations": []
+}
+```
+
+`revenueAccountId: null` uses the mapped default (`4000 Sales Revenue`); supply an id to split a
+line to a specific **Revenue-type** account.
+
+```http
+POST /api/sales-invoices/1/post
+→ 200 OK
+{
+  "invoice": { "salesInvoiceId": 1, "invoiceNumber": "INV-000001", "status": "Posted",
+               "grandTotal": 118000.00, "outstandingAmount": 118000.00 },
+  "journalEntry": {
+    "journalEntryId": 2, "entryNumber": "JV-000002", "entryDate": "2026-09-04",
+    "description": "Sales Invoice INV-000001 - XYZ Retail",
+    "totalDebit": 118000.00, "totalCredit": 118000.00, "isBalanced": true,
+    "lines": [
+      { "accountCode": "1100", "accountName": "Accounts Receivable", "debit": 118000.00, "credit": 0.00, "customerId": 1 },
+      { "accountCode": "4000", "accountName": "Sales Revenue",        "debit": 0.00, "credit": 100000.00 },
+      { "accountCode": "2100", "accountName": "Tax Payable (Output)", "debit": 0.00, "credit": 18000.00 }
+    ]
+  }
+}
+```
+
+Posting an already-posted invoice → **409**. `PUT` / `DELETE` on a posted invoice → **409**.
+`GET /api/sales-invoices/{id}/journal-entry` returns just the entry.
+
+### 4 — Customer receipt (§4B)
+
+```http
+GET  /api/payment-methods           → [ { "paymentMethodId": 1, "name": "Cash", "ledgerAccountCode": "1010" },
+                                          { "paymentMethodId": 2, "name": "Bank", "ledgerAccountCode": "1020" } ]
+
+POST /api/customer-payments
+{
+  "customerId": 1,
+  "paymentDate": "2026-09-04",
+  "paymentMethodId": 2,
+  "referenceNo": "CHQ-77120",
+  "amount": 50000.00,
+  "allocations": [ { "salesInvoiceId": 1, "allocatedAmount": 50000.00 } ]
+}
+→ 201 Created
+{
+  "payment": { "paymentNumber": "RCT-000001", "status": "Posted", "amount": 50000.00,
+               "allocations": [ { "invoiceNumber": "INV-000001", "allocatedAmount": 50000.00,
+                                  "invoiceOutstanding": 68000.00 } ] },
+  "journalEntry": { "entryNumber": "JV-000003", "isBalanced": true,
+    "lines": [ { "accountCode": "1020", "debit": 50000.00 },
+               { "accountCode": "1100", "credit": 50000.00, "customerId": 1 } ] }
+}
+```
+
+`sum(allocations) must equal amount` (400 otherwise — see Assumptions). Allocating more than an
+invoice's outstanding balance → **409**. `paymentDate` before the invoice date → **400**.
+
+### 5 — Supplier bill (§4C) and supplier payment (§4D)
+
+```http
+POST /api/supplier-bills
+{ "supplierId": 1, "billDate": "2026-09-04", "dueDate": "2026-10-04", "notes": null,
+  "lines": [ { "description": "Trading stock", "quantity": 1, "unitPrice": 60000.00,
+               "discountPercent": 0, "taxRatePercent": 0, "debitAccountId": null } ] }
+→ 201 Created   (status "Draft", grandTotal 60000.00)
+
+POST /api/supplier-bills/1/post
+→ journalEntry: DR 5000 Purchases 60,000 / CR 2000 Accounts Payable 60,000
+
+POST /api/supplier-payments
+{ "supplierId": 1, "paymentDate": "2026-09-04", "paymentMethodId": 1, "referenceNo": "VCH-3001",
+  "amount": 30000.00, "allocations": [ { "supplierBillId": 1, "allocatedAmount": 30000.00 } ] }
+→ 201 Created
+  journalEntry: DR 2000 Accounts Payable 30,000 / CR 1010 Cash 30,000   (isBalanced: true)
+```
+
+`debitAccountId: null` uses the mapped default (`5000 Purchases`); supply an id for an **Expense**
+or **Asset** account (e.g. `1200 Inventory`). Any other account type → **400**.
+
+### 6 — Correction: reverse a posted document
+
+```http
+POST /api/sales-invoices/1/reverse
+{ "reversalDate": "2026-09-30", "reason": "Wrong customer on the invoice" }
+→ 200 OK
+{ "invoice": { "status": "Reversed" },
+  "journalEntry": { "entryNumber": "JV-000006", "isReversal": true, "reversesJournalEntryId": 2,
+                    "isBalanced": true, "lines": [ /* every debit/credit of JV-000002 swapped */ ] } }
+```
+
+Also on `/api/supplier-bills/{id}/reverse`, `/api/customer-payments/{id}/reverse`,
+`/api/supplier-payments/{id}/reverse`. Reversing an invoice/bill while a non-reversed payment is
+allocated to it → **409** (reverse the payment first — that restores the outstanding balance).
+`reason` is mandatory (**400** if blank).
+
+### 7 — Manual journal entry
+
+```http
+POST /api/journal-entries
+{ "entryDate": "2026-09-30", "description": "Depreciation — September",
+  "lines": [ { "accountId": 13, "debit": 2500, "credit": 0 },
+             { "accountId": 4,  "debit": 0, "credit": 2500 } ] }
+→ 201 Created   (≥ 2 lines, each one-sided; unbalanced → 422)
+
+GET  /api/journal-entries?fromDate=2026-09-01&toDate=2026-09-30&sourceType=1&accountId=3
+POST /api/journal-entries/{id}/reverse        (Manual / Opening entries only)
+```
+
+### 8 — Reports (§5)
+
+```http
+GET /api/reports/trial-balance?asOfDate=2026-09-30
+→ { "asOfDate": "2026-09-30",
+    "rows": [ { "accountCode": "1010", "accountName": "Cash in Hand",
+                "totalDebit": 100000.00, "totalCredit": 30000.00,
+                "debitBalance": 70000.00, "creditBalance": 0.00 }, ... ],
+    "totalDebitBalance": 648000.00, "totalCreditBalance": 648000.00, "isBalanced": true }
+
+GET /api/reports/profit-and-loss?fromDate=2026-01-01&toDate=2026-12-31
+→ { "revenue": [ { "accountCode": "4000", "amount": 100000.00 } ], "totalRevenue": 100000.00,
+    "expenses": [ { "accountCode": "5000", "amount": 60000.00 } ], "totalExpenses": 60000.00,
+    "netProfit": 40000.00 }
+
+GET /api/reports/general-ledger?accountId=3&fromDate=2026-01-01&toDate=2026-12-31
+→ { "accountCode": "1100", "openingBalance": 0.00, "closingBalance": 68000.00,
+    "totalDebit": 118000.00, "totalCredit": 50000.00,
+    "entries": [ { "entryNumber": "JV-000002", "debit": 118000.00, "credit": 0.00, "runningBalance": 118000.00 },
+                 { "entryNumber": "JV-000003", "debit": 0.00, "credit": 50000.00, "runningBalance": 68000.00 } ] }
+
+GET /api/reports/customer-outstanding?customerId=1&asOfDate=2026-09-30
+GET /api/reports/supplier-outstanding?supplierId=1&asOfDate=2026-09-30
+→ { "asOfDate": "2026-09-30", "totalOutstanding": 68000.00,
+    "rows": [ { "documentNumber": "INV-000001", "grandTotal": 118000.00, "amountPaid": 50000.00,
+                "outstanding": 68000.00, "ageingBucket": "Current" } ] }
+```
+
+`asOfDate` defaults to today if omitted; `profit-and-loss` requires both `fromDate` and `toDate`
+(**400** otherwise); `general-ledger` requires `accountId` (unknown id → **404**).
 
 ---
 

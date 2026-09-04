@@ -9,7 +9,7 @@
    schema/API behave identically without it.
 
    Run AFTER 02_seed.sql:
-       sqlcmd -S localhost,1433 -U sa -P '<password>' -d SsitAccountingDb -i 03_demo_data.sql
+       sqlcmd -S localhost,1433 -U sa -P '<password>' -I -i 03_demo_data.sql
 
    Posts directly to the journal tables (there is no application running
    yet at this stage of setup) using the exact same number-allocation
@@ -17,6 +17,9 @@
    NumberSequence allocator uses, so it mirrors what JournalService will
    do once it exists.
    ===================================================================== */
+
+USE AccountingERPDb;
+GO
 
 SET NOCOUNT ON;
 SET XACT_ABORT ON;

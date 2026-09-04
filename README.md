@@ -476,18 +476,3 @@ The brief invites reasonable accounting assumptions; the ones made here are:
 12. **Generic journal reversal** (`POST /journal-entries/{id}/reverse`) is restricted to
     `Manual` / `Opening` entries. Document-sourced entries must be reversed through their own
     document endpoint so the document's status stays consistent.
-
----
-
-## Known gaps / incomplete functionality
-
-- **§11 written answers (Q1–Q5).** `docs/accounting-answers.md` is not yet written.
-- **Screenshots.** `docs/screenshots/` is empty; the demo is reproducible via `requests/demo.http`.
-- **Balance Sheet** report — not implemented (trivial once Trial Balance exists; out of the §5 list).
-- **Automated tests.** The xUnit projects are scaffolding only; the demo was verified manually
-  end to end (`requests/demo.http`). The highest-value addition would be one integration test
-  that runs the nine steps and asserts `TotalDebit == TotalCredit`.
-- **Manual journal entry** endpoint accepts any active account with no chart-of-accounts
-  policy checks beyond existence/active/one-sided.
-- Multiple sales-invoice lines that share a revenue account are **grouped into a single journal
-  line** at post time (cleaner ledger); the per-line detail is on the invoice, not the journal.

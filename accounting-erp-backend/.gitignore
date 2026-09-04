@@ -1,0 +1,37 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+build/
+artifacts/
+
+# .NET / Rider / VS
+.vs/
+.idea/
+*.user
+*.suo
+*.userprefs
+project.lock.json
+*.lock.json
+
+# Test / coverage
+[Tt]est[Rr]esult*/
+coverage*.json
+coverage*.xml
+coverage*.info
+*.trx
+
+# Local secrets & environment overrides
+appsettings.*.local.json
+secrets.json
+*.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Assessment artifact
+SSIT_Assessment_SQL_AspNetCore_Dapper_Accounting(F).pdf

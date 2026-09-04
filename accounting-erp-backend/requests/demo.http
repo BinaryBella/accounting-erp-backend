@@ -1,0 +1,171 @@
+####################################################################################
+#  ABC Trading (Pvt) Ltd — Assessment demo scenario (brief §10)
+#
+#  Run top to bottom in VS Code (REST Client extension) or JetBrains Rider.
+#  Each request feeds the next via its captured response.
+#
+#  Prerequisite: db/01_schema.sql -> db/02_seed.sql -> db/03_demo_data.sql have
+#  been run, and the API is up (dotnet run --project src/AccountingERP.Api).
+#
+#  Expected end state (Trial Balance, includes the optional opening entry):
+#    Total Debit 648,000.00 = Total Credit 648,000.00   ->  "isBalanced": true
+#    Profit & Loss:  Revenue 100,000  -  Expenses 60,000  =  Net Profit 40,000
+####################################################################################
+
+@host = http://localhost:5006
+
+### 1. Create customer C001 — XYZ Retail
+# @name createCustomer
+POST {{host}}/api/customers
+Content-Type: application/json
+
+{
+  "customerCode": "C001",
+  "name": "XYZ Retail",
+  "contactPerson": "Nimal Perera",
+  "email": "accounts@xyzretail.lk",
+  "phone": "011-2345678",
+  "address": "42 Galle Road, Colombo 03"
+}
+
+### 2. Create supplier S001 — ABC Suppliers
+# @name createSupplier
+POST {{host}}/api/suppliers
+Content-Type: application/json
+
+{
+  "supplierCode": "S001",
+  "name": "ABC Suppliers",
+  "contactPerson": "Kamala Silva",
+  "email": "sales@abcsuppliers.lk",
+  "phone": "011-8765432",
+  "address": "17 Negombo Road, Ja-Ela"
+}
+
+### 3. Create a sales invoice — 1 x LKR 100,000 @ 18% tax  (GrandTotal 118,000, status Draft)
+# @name createInvoice
+POST {{host}}/api/sales-invoices
+Content-Type: application/json
+
+{
+  "customerId": {{createCustomer.response.body.customerId}},
+  "invoiceDate": "2026-09-04",
+  "dueDate": "2026-10-04",
+  "notes": "Assessment demo invoice",
+  "lines": [
+    {
+      "description": "Trading goods",
+      "quantity": 1,
+      "unitPrice": 100000.00,
+      "discountPercent": 0,
+      "taxRatePercent": 18,
+      "revenueAccountId": null
+    }
+  ]
+}
+
+### 4. Post the invoice — journal: DR 1100 AR 118,000 / CR 4000 Revenue 100,000 / CR 2100 Tax 18,000
+# @name postInvoice
+POST {{host}}/api/sales-invoices/{{createInvoice.response.body.salesInvoiceId}}/post
+
+### 4b. (show the journal entry again on its own)
+GET {{host}}/api/sales-invoices/{{createInvoice.response.body.salesInvoiceId}}/journal-entry
+
+### 5. Receive LKR 50,000 from the customer by Bank — journal: DR 1020 Bank 50,000 / CR 1100 AR 50,000
+# @name receipt
+POST {{host}}/api/customer-payments
+Content-Type: application/json
+
+{
+  "customerId": {{createCustomer.response.body.customerId}},
+  "paymentDate": "2026-09-04",
+  "paymentMethodId": 2,
+  "referenceNo": "CHQ-77120",
+  "amount": 50000.00,
+  "allocations": [
+    { "salesInvoiceId": {{createInvoice.response.body.salesInvoiceId}}, "allocatedAmount": 50000.00 }
+  ]
+}
+
+### 6. Create a supplier bill — LKR 60,000, no tax  (then post: DR 5000 Purchases 60,000 / CR 2000 AP 60,000)
+# @name createBill
+POST {{host}}/api/supplier-bills
+Content-Type: application/json
+
+{
+  "supplierId": {{createSupplier.response.body.supplierId}},
+  "billDate": "2026-09-04",
+  "dueDate": "2026-10-04",
+  "notes": "Assessment demo bill",
+  "lines": [
+    {
+      "description": "Trading stock",
+      "quantity": 1,
+      "unitPrice": 60000.00,
+      "discountPercent": 0,
+      "taxRatePercent": 0,
+      "debitAccountId": null
+    }
+  ]
+}
+
+### 6b. Post the supplier bill
+# @name postBill
+POST {{host}}/api/supplier-bills/{{createBill.response.body.supplierBillId}}/post
+
+### 7. Pay LKR 30,000 to the supplier by Cash — journal: DR 2000 AP 30,000 / CR 1010 Cash 30,000
+POST {{host}}/api/supplier-payments
+Content-Type: application/json
+
+{
+  "supplierId": {{createSupplier.response.body.supplierId}},
+  "paymentDate": "2026-09-04",
+  "paymentMethodId": 1,
+  "referenceNo": "VCH-3001",
+  "amount": 30000.00,
+  "allocations": [
+    { "supplierBillId": {{createBill.response.body.supplierBillId}}, "allocatedAmount": 30000.00 }
+  ]
+}
+
+### 8. Trial Balance  ->  Total Debit 648,000 = Total Credit 648,000, "isBalanced": true  (step 9)
+GET {{host}}/api/reports/trial-balance?asOfDate=2026-09-30
+
+### 8b. Profit & Loss  ->  Revenue 100,000 - Expenses 60,000 = Net Profit 40,000
+GET {{host}}/api/reports/profit-and-loss?fromDate=2026-01-01&toDate=2026-12-31
+
+### --- extra reports -----------------------------------------------------------
+
+### General Ledger — Accounts Receivable (account id 3), running balance
+GET {{host}}/api/reports/general-ledger?accountId=3&fromDate=2026-01-01&toDate=2026-12-31
+
+### Customer Outstanding — INV-000001 shows 68,000 outstanding
+GET {{host}}/api/reports/customer-outstanding?asOfDate=2026-09-30
+
+### Supplier Outstanding — BILL-000001 shows 30,000 outstanding
+GET {{host}}/api/reports/supplier-outstanding?asOfDate=2026-09-30
+
+### All journal entries (JV-000001 opening, JV-000002..JV-000005 from the demo)
+GET {{host}}/api/journal-entries
+
+### --- immutability / reversal demo -------------------------------------------
+
+### Editing a posted invoice is refused (409)
+PUT {{host}}/api/sales-invoices/{{createInvoice.response.body.salesInvoiceId}}
+Content-Type: application/json
+
+{
+  "customerId": {{createCustomer.response.body.customerId}},
+  "invoiceDate": "2026-09-04",
+  "dueDate": null,
+  "notes": "trying to tamper",
+  "lines": [
+    { "description": "x", "quantity": 1, "unitPrice": 1, "discountPercent": 0, "taxRatePercent": 0, "revenueAccountId": null }
+  ]
+}
+
+### Reversing a posted invoice is refused while a receipt is allocated (409)
+POST {{host}}/api/sales-invoices/{{createInvoice.response.body.salesInvoiceId}}/reverse
+Content-Type: application/json
+
+{ "reversalDate": "2026-09-30", "reason": "demo — blocked because a receipt is allocated" }

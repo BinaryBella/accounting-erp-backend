@@ -1,3 +1,6 @@
+using AccountingERP.Api.Middleware;
+using AccountingERP.Application;
+using AccountingERP.Infrastructure;
 using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -5,8 +8,8 @@ var builder = WebApplication.CreateBuilder(args);
 // --- Services -------------------------------------------------------------
 builder.Services.AddControllers();
 
-// RFC 7807 ProblemDetails is the error contract for every endpoint (see PLAN §7).
-builder.Services.AddProblemDetails();
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -21,14 +24,10 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-// Infrastructure (SqlConnectionFactory / UnitOfWork / repositories) and
-// Application services are registered in later steps.
-
 var app = builder.Build();
 
 // --- HTTP pipeline ------------------------------------------------------------
-app.UseExceptionHandler();   // pairs with AddProblemDetails; custom middleware added in a later step
-app.UseStatusCodePages();
+app.UseExceptionHandling();   // RFC 7807 for every unhandled exception (PLAN §7)
 
 if (app.Environment.IsDevelopment())
 {

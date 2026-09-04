@@ -1,0 +1,30 @@
+using AccountingERP.Application.Abstractions;
+using AccountingERP.Application.Services;
+using FluentValidation;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace AccountingERP.Application;
+
+public static class DependencyInjection
+{
+    /// <summary>
+    /// Registers application services and FluentValidation validators.
+    /// Validators are picked up automatically from this assembly.
+    /// </summary>
+    public static IServiceCollection AddApplication(this IServiceCollection services)
+    {
+        services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly, includeInternalTypes: true);
+
+        services.AddScoped<IAccountService, AccountService>();
+        services.AddScoped<ICustomerService, CustomerService>();
+        services.AddScoped<ISupplierService, SupplierService>();
+        services.AddScoped<IJournalService, JournalService>();
+        services.AddScoped<ISalesInvoiceService, SalesInvoiceService>();
+        services.AddScoped<ICustomerPaymentService, CustomerPaymentService>();
+        services.AddScoped<ISupplierBillService, SupplierBillService>();
+        services.AddScoped<ISupplierPaymentService, SupplierPaymentService>();
+        services.AddScoped<IReportService, ReportService>();
+
+        return services;
+    }
+}

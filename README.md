@@ -491,22 +491,3 @@ The brief invites reasonable accounting assumptions; the ones made here are:
   policy checks beyond existence/active/one-sided.
 - Multiple sales-invoice lines that share a revenue account are **grouped into a single journal
   line** at post time (cleaner ledger); the per-line detail is on the invoice, not the journal.
-
-## Verified demo result
-
-Running `requests/demo.http` against a fresh DB (schema + seed + opening entry) produces:
-
-| Account | Debit | Credit |
-|---|---|---|
-| 1010 Cash in Hand | 70,000.00 | |
-| 1020 Bank Account | 450,000.00 | |
-| 1100 Accounts Receivable | 68,000.00 | |
-| 2000 Accounts Payable | | 30,000.00 |
-| 2100 Tax Payable (Output) | | 18,000.00 |
-| 3000 Owner's Capital | | 500,000.00 |
-| 4000 Sales Revenue | | 100,000.00 |
-| 5000 Purchases | 60,000.00 | |
-| **Total** | **648,000.00** | **648,000.00** |
-
-`trial-balance` response → `"isBalanced": true`. `profit-and-loss` → Revenue 100,000 −
-Expenses 60,000 = **Net Profit 40,000**.

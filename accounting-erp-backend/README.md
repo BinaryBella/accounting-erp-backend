@@ -63,12 +63,19 @@ only in `Program.cs` DI registration.
 
 ## Run
 
-1. Create the database and run, in order:
-   `db/01_schema.sql` → `db/02_seed.sql` → `db/03_demo_data.sql` *(optional)*
+1. Create the database and run the scripts, in order (use `-I` — the schema has filtered
+   indexes, which require `QUOTED_IDENTIFIER ON`; the scripts also set it themselves, and
+   SSMS / the app connection have it on by default):
+   ```bash
+   sqlcmd -S localhost,1433 -U sa -P 'Str0ng!Passw0rd' -I -Q "CREATE DATABASE SsitAccountingDb"
+   sqlcmd -S localhost,1433 -U sa -P 'Str0ng!Passw0rd' -I -d SsitAccountingDb -i db/01_schema.sql
+   sqlcmd -S localhost,1433 -U sa -P 'Str0ng!Passw0rd' -I -d SsitAccountingDb -i db/02_seed.sql
+   sqlcmd -S localhost,1433 -U sa -P 'Str0ng!Passw0rd' -I -d SsitAccountingDb -i db/03_demo_data.sql   # optional
+   ```
 2. Set the connection string (prefer user-secrets over committing it):
    ```bash
    dotnet user-secrets --project src/AccountingERP.Api \
-     set "ConnectionStrings:AccountingDb" "Server=localhost,1433;Database=AccountingErp;User Id=sa;Password=Str0ng!Passw0rd;TrustServerCertificate=True"
+     set "ConnectionStrings:AccountingDb" "Server=localhost,1433;Database=SsitAccountingDb;User Id=sa;Password=Str0ng!Passw0rd;TrustServerCertificate=True"
    ```
    A working `appsettings.Development.json` default is included for local use.
 3. `dotnet run --project src/AccountingERP.Api`

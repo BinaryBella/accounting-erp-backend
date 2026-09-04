@@ -31,6 +31,19 @@ UPDATE dbo.Payment
 SET    Status = 2, JournalEntryId = @JournalEntryId, PostedAtUtc = SYSUTCDATETIME()
 WHERE  PaymentId = @PaymentId;";
 
+    public const string MarkReversed = @"
+UPDATE dbo.Payment SET Status = 3 WHERE PaymentId = @PaymentId;";
+
+    public const string GetForReverse = @"
+SELECT p.PaymentId, p.PaymentNumber, p.Status, p.JournalEntryId
+FROM   dbo.Payment p
+WHERE  p.PaymentId = @PaymentId AND p.PaymentType = 1;
+
+SELECT pa.SalesInvoiceId, pa.AllocatedAmount
+FROM   dbo.PaymentAllocation pa
+WHERE  pa.PaymentId = @PaymentId AND pa.SalesInvoiceId IS NOT NULL
+ORDER BY pa.PaymentAllocationId;";
+
     public const string GetCustomerReceiptById = @"
 SELECT p.PaymentId, p.PaymentNumber, p.CustomerId, c.CustomerCode, c.Name AS CustomerName,
        p.PaymentDate, p.PaymentMethodId, pm.Name AS PaymentMethod, p.ReferenceNo,

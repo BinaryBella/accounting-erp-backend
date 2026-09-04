@@ -46,6 +46,24 @@ public sealed class CustomerPaymentRepository : ICustomerPaymentRepository
         _uow.Connection.ExecuteAsync(new CommandDefinition(
             PaymentSql.MarkPosted, new { PaymentId = paymentId, JournalEntryId = journalEntryId }, _uow.Transaction));
 
+    public Task MarkReversedAsync(int paymentId) =>
+        _uow.Connection.ExecuteAsync(new CommandDefinition(
+            PaymentSql.MarkReversed, new { PaymentId = paymentId }, _uow.Transaction));
+
+    public async Task<CustomerPaymentReverseInfo?> GetForReverseAsync(int paymentId)
+    {
+        using var grid = await _uow.Connection.QueryMultipleAsync(new CommandDefinition(
+            PaymentSql.GetForReverse, new { PaymentId = paymentId }, _uow.Transaction));
+
+        var header = await grid.ReadSingleOrDefaultAsync<PaymentReverseHeaderRow>();
+        if (header is null)
+            return null;
+
+        var allocations = (await grid.ReadAsync<PaymentAllocationSnapshot>()).ToList();
+        return new CustomerPaymentReverseInfo(
+            header.PaymentId, header.PaymentNumber, header.Status, header.JournalEntryId, allocations);
+    }
+
     public async Task<CustomerPaymentResponse?> GetByIdAsync(int paymentId)
     {
         using var grid = await _uow.Connection.QueryMultipleAsync(new CommandDefinition(
@@ -112,5 +130,13 @@ public sealed class CustomerPaymentRepository : ICustomerPaymentRepository
         public string PaymentMethod { get; set; } = default!;
         public decimal Amount { get; set; }
         public byte Status { get; set; }
+    }
+
+    private sealed class PaymentReverseHeaderRow
+    {
+        public int PaymentId { get; set; }
+        public string PaymentNumber { get; set; } = default!;
+        public byte Status { get; set; }
+        public int? JournalEntryId { get; set; }
     }
 }

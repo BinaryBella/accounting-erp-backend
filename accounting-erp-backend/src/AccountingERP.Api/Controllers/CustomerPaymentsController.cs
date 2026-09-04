@@ -40,4 +40,13 @@ public sealed class CustomerPaymentsController : ControllerBase
         var result = await _payments.CreateAsync(request);
         return CreatedAtRoute("GetCustomerPayment", new { id = result.Payment.PaymentId }, result);
     }
+
+    /// <summary>Reverses a posted receipt: mirror journal entry and the allocated invoices' outstanding balances restored.</summary>
+    [HttpPost("{id:int}/reverse")]
+    [ProducesResponseType(typeof(ReverseCustomerPaymentResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public Task<ReverseCustomerPaymentResult> Reverse(int id, [FromBody] ReverseRequest request)
+        => _payments.ReverseAsync(id, request);
 }

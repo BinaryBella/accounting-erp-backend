@@ -43,6 +43,12 @@ SET    Status         = 2,
        UpdatedAtUtc    = SYSUTCDATETIME()
 WHERE  SupplierBillId = @SupplierBillId;";
 
+    // Status 2 -> 3 only; no financial column changes, so TR_SupplierBill_LockPosted does not fire.
+    public const string MarkReversed = @"
+UPDATE dbo.SupplierBill
+SET    Status = 3, UpdatedAtUtc = SYSUTCDATETIME()
+WHERE  SupplierBillId = @SupplierBillId;";
+
     // FK_SupplierBillLine_Bill has ON DELETE CASCADE, so the lines go with it.
     public const string Delete = @"
 DELETE FROM dbo.SupplierBill WHERE SupplierBillId = @SupplierBillId;";
@@ -106,7 +112,12 @@ ORDER BY sbl.LineNumber;";
 
     public const string GetGuard = @"
 SELECT sb.SupplierBillId, sb.Status, sb.JournalEntryId, sb.AmountPaid,
-       CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.PaymentAllocation pa WHERE pa.SupplierBillId = sb.SupplierBillId)
+       CAST(CASE WHEN EXISTS (
+                 SELECT 1
+                 FROM   dbo.PaymentAllocation pa
+                 JOIN   dbo.Payment p ON p.PaymentId = pa.PaymentId
+                 WHERE  pa.SupplierBillId = sb.SupplierBillId
+                   AND  p.Status <> 3)   -- ignore allocations from reversed payments
                  THEN 1 ELSE 0 END AS BIT) AS HasAllocations
 FROM   dbo.SupplierBill sb
 WHERE  sb.SupplierBillId = @SupplierBillId;";

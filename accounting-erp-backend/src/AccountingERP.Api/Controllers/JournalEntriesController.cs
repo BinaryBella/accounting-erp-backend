@@ -39,4 +39,13 @@ public sealed class JournalEntriesController : ControllerBase
         var created = await _journal.CreateManualEntryAsync(request);
         return CreatedAtRoute("GetJournalEntry", new { id = created.JournalEntryId }, created);
     }
+
+    /// <summary>Reverses a Manual or Opening journal entry with a mirror entry. Document-sourced entries must be reversed via their own endpoint (409).</summary>
+    [HttpPost("{id:int}/reverse")]
+    [ProducesResponseType(typeof(JournalEntryResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public Task<JournalEntryResponse> Reverse(int id, [FromBody] ReverseRequest request)
+        => _journal.ReverseManualAsync(id, request);
 }

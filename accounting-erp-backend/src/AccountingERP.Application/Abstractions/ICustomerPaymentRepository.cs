@@ -16,6 +16,11 @@ public interface ICustomerPaymentRepository
 
     Task MarkPostedAsync(int paymentId, int journalEntryId);
 
+    Task MarkReversedAsync(int paymentId);
+
+    /// <summary>Status, journal entry and allocation snapshot needed to reverse a receipt.</summary>
+    Task<CustomerPaymentReverseInfo?> GetForReverseAsync(int paymentId);
+
     Task<CustomerPaymentResponse?> GetByIdAsync(int paymentId);
 
     Task<PagedResult<CustomerPaymentListItem>> ListAsync(CustomerPaymentQuery query);

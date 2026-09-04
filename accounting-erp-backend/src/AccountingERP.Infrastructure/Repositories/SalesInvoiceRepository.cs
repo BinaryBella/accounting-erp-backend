@@ -143,6 +143,10 @@ public sealed class SalesInvoiceRepository : ISalesInvoiceRepository
         _uow.Connection.ExecuteAsync(new CommandDefinition(
             SalesInvoiceSql.MarkPosted, new { SalesInvoiceId = salesInvoiceId, JournalEntryId = journalEntryId }, _uow.Transaction));
 
+    public Task MarkReversedAsync(int salesInvoiceId) =>
+        _uow.Connection.ExecuteAsync(new CommandDefinition(
+            SalesInvoiceSql.MarkReversed, new { SalesInvoiceId = salesInvoiceId }, _uow.Transaction));
+
     public Task DeleteAsync(int salesInvoiceId) =>
         _uow.Connection.ExecuteAsync(new CommandDefinition(
             SalesInvoiceSql.Delete, new { SalesInvoiceId = salesInvoiceId }, _uow.Transaction));

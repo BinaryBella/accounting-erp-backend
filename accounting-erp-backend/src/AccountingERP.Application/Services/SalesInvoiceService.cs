@@ -20,6 +20,7 @@ public sealed class SalesInvoiceService : ISalesInvoiceService
     private readonly IJournalService _journal;
     private readonly IAuditRepository _audit;
     private readonly IValidator<SalesInvoiceWriteRequest> _validator;
+    private readonly IValidator<ReverseRequest> _reverseValidator;
 
     public SalesInvoiceService(
         IUnitOfWork uow,
@@ -30,7 +31,8 @@ public sealed class SalesInvoiceService : ISalesInvoiceService
         INumberSequenceRepository sequences,
         IJournalService journal,
         IAuditRepository audit,
-        IValidator<SalesInvoiceWriteRequest> validator)
+        IValidator<SalesInvoiceWriteRequest> validator,
+        IValidator<ReverseRequest> reverseValidator)
     {
         _uow = uow;
         _invoices = invoices;
@@ -41,6 +43,7 @@ public sealed class SalesInvoiceService : ISalesInvoiceService
         _journal = journal;
         _audit = audit;
         _validator = validator;
+        _reverseValidator = reverseValidator;
     }
 
     // ---- reads -----------------------------------------------------------
@@ -208,6 +211,44 @@ public sealed class SalesInvoiceService : ISalesInvoiceService
             var journalEntry = await _journal.GetOrNullAsync(journalEntryId)
                                ?? throw new InvalidOperationException("Journal entry vanished after commit.");
             return new PostSalesInvoiceResult(invoice, journalEntry);
+        }
+        catch
+        {
+            _uow.Rollback();
+            throw;
+        }
+    }
+
+    // ---- reverse (PLAN §5) -------------------------------------------------
+
+    public async Task<ReverseSalesInvoiceResult> ReverseAsync(int id, ReverseRequest request)
+    {
+        await _reverseValidator.EnsureValidAsync(request);
+
+        var guard = await _invoices.GetGuardAsync(id) ?? throw new NotFoundException("Sales invoice", id);
+
+        if (guard.Status != (byte)DocumentStatus.Posted)
+            throw new ConflictException("Only a posted invoice can be reversed.");
+        if (guard.HasAllocations)
+            throw new ConflictException("This invoice has allocated payments. Reverse the receipts first, then reverse the invoice.");
+        if (guard.JournalEntryId is not { } originalJournalEntryId)
+            throw new ConflictException("This invoice has no journal entry to reverse.");
+
+        _uow.Begin();
+        try
+        {
+            var reversalJournalEntryId = await _journal.ReverseAsync(originalJournalEntryId, request.ReversalDate, request.Reason);
+            await _invoices.MarkReversedAsync(id);
+            await _audit.WriteAsync("SalesInvoice", id, "Reversed",
+                $"{{\"originalJournalEntryId\":{originalJournalEntryId},\"reversalJournalEntryId\":{reversalJournalEntryId}}}");
+
+            _uow.Commit();
+
+            var invoice = await _invoices.GetByIdAsync(id)
+                          ?? throw new InvalidOperationException("Sales invoice vanished after commit.");
+            var journalEntry = await _journal.GetOrNullAsync(reversalJournalEntryId)
+                               ?? throw new InvalidOperationException("Reversal journal entry vanished after commit.");
+            return new ReverseSalesInvoiceResult(invoice, journalEntry);
         }
         catch
         {

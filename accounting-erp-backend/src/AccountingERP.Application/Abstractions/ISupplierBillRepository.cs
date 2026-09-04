@@ -23,5 +23,7 @@ public interface ISupplierBillRepository
 
     Task MarkPostedAsync(int supplierBillId, int journalEntryId);
 
+    Task MarkReversedAsync(int supplierBillId);
+
     Task DeleteAsync(int supplierBillId);
 }

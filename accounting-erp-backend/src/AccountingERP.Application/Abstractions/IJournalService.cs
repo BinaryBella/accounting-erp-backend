@@ -22,4 +22,17 @@ public interface IJournalService
 
     /// <summary>Manual journal entry (depreciation, accruals, corrections). Owns its own transaction.</summary>
     Task<JournalEntryResponse> CreateManualEntryAsync(CreateJournalEntryRequest request);
+
+    /// <summary>
+    /// Posts a mirror of <paramref name="originalJournalEntryId"/> with every debit/credit swapped,
+    /// <c>IsReversal = 1</c> and <c>ReversesJournalEntryId</c> set. Used by the document reverse
+    /// endpoints. MUST run inside an active unit-of-work transaction. Returns the new JournalEntryId.
+    /// </summary>
+    Task<int> ReverseAsync(int originalJournalEntryId, DateOnly reversalDate, string reason);
+
+    /// <summary>
+    /// Generic reversal endpoint for Manual / Opening entries. Rejects entries that belong to a
+    /// document (use that document's reverse endpoint instead). Owns its own transaction.
+    /// </summary>
+    Task<JournalEntryResponse> ReverseManualAsync(int journalEntryId, ReverseRequest request);
 }

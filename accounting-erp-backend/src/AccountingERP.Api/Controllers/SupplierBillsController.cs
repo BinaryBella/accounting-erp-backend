@@ -66,6 +66,15 @@ public sealed class SupplierBillsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
     public Task<PostSupplierBillResult> Post(int id) => _bills.PostAsync(id);
 
+    /// <summary>Reverses a posted bill with a mirror journal entry. Body: reversalDate + reason. 409 if payments are allocated.</summary>
+    [HttpPost("{id:int}/reverse")]
+    [ProducesResponseType(typeof(ReverseSupplierBillResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public Task<ReverseSupplierBillResult> Reverse(int id, [FromBody] ReverseRequest request)
+        => _bills.ReverseAsync(id, request);
+
     [HttpGet("{id:int}/journal-entry")]
     [ProducesResponseType(typeof(JournalEntryResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

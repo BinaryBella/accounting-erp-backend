@@ -143,6 +143,10 @@ public sealed class SupplierBillRepository : ISupplierBillRepository
         _uow.Connection.ExecuteAsync(new CommandDefinition(
             SupplierBillSql.MarkPosted, new { SupplierBillId = supplierBillId, JournalEntryId = journalEntryId }, _uow.Transaction));
 
+    public Task MarkReversedAsync(int supplierBillId) =>
+        _uow.Connection.ExecuteAsync(new CommandDefinition(
+            SupplierBillSql.MarkReversed, new { SupplierBillId = supplierBillId }, _uow.Transaction));
+
     public Task DeleteAsync(int supplierBillId) =>
         _uow.Connection.ExecuteAsync(new CommandDefinition(
             SupplierBillSql.Delete, new { SupplierBillId = supplierBillId }, _uow.Transaction));

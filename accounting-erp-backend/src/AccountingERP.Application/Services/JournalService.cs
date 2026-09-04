@@ -14,20 +14,26 @@ public sealed class JournalService : IJournalService
     private readonly IJournalRepository _journal;
     private readonly INumberSequenceRepository _sequences;
     private readonly IAccountRepository _accounts;
+    private readonly IAuditRepository _audit;
     private readonly IValidator<CreateJournalEntryRequest> _manualValidator;
+    private readonly IValidator<ReverseRequest> _reverseValidator;
 
     public JournalService(
         IUnitOfWork uow,
         IJournalRepository journal,
         INumberSequenceRepository sequences,
         IAccountRepository accounts,
-        IValidator<CreateJournalEntryRequest> manualValidator)
+        IAuditRepository audit,
+        IValidator<CreateJournalEntryRequest> manualValidator,
+        IValidator<ReverseRequest> reverseValidator)
     {
         _uow = uow;
         _journal = journal;
         _sequences = sequences;
         _accounts = accounts;
+        _audit = audit;
         _manualValidator = manualValidator;
+        _reverseValidator = reverseValidator;
     }
 
     // ---- the single write path (PLAN §4) ------------------------------------
@@ -111,6 +117,69 @@ public sealed class JournalService : IJournalService
             _uow.Commit();
             return await _journal.GetByIdAsync(id)
                    ?? throw new InvalidOperationException("Journal entry vanished immediately after commit.");
+        }
+        catch
+        {
+            _uow.Rollback();
+            throw;
+        }
+    }
+
+    // ---- reversal -------------------------------------------------------
+
+    public async Task<int> ReverseAsync(int originalJournalEntryId, DateOnly reversalDate, string reason)
+    {
+        if (_uow.Transaction is null)
+            throw new InvalidOperationException(
+                "JournalService.ReverseAsync must run inside an active unit-of-work transaction opened by the caller.");
+
+        var original = await _journal.GetForReverseAsync(originalJournalEntryId)
+                       ?? throw new NotFoundException("Journal entry", originalJournalEntryId);
+
+        if (original.IsReversal)
+            throw new ConflictException($"Journal entry {original.EntryNumber} is itself a reversal and cannot be reversed.");
+        if (await _journal.IsAlreadyReversedAsync(originalJournalEntryId))
+            throw new ConflictException($"Journal entry {original.EntryNumber} has already been reversed.");
+
+        // Mirror: swap each line's debit and credit; keep the party tag.
+        var swapped = original.Lines
+            .Select(l => new JournalDraftLine(l.AccountId, l.Credit, l.Debit, l.Description, l.CustomerId, l.SupplierId))
+            .ToList();
+
+        return await PostAsync(new JournalDraft
+        {
+            SourceType = (JournalSourceType)original.SourceType,
+            SourceId = original.SourceId,
+            EntryDate = reversalDate,
+            Description = $"Reversal of {original.EntryNumber} — {reason.Trim()}",
+            IsReversal = true,
+            ReversesJournalEntryId = originalJournalEntryId,
+            Lines = swapped
+        });
+    }
+
+    public async Task<JournalEntryResponse> ReverseManualAsync(int journalEntryId, ReverseRequest request)
+    {
+        await _reverseValidator.EnsureValidAsync(request);
+
+        var original = await _journal.GetForReverseAsync(journalEntryId)
+                       ?? throw new NotFoundException("Journal entry", journalEntryId);
+
+        if ((JournalSourceType)original.SourceType is not (JournalSourceType.Manual or JournalSourceType.Opening))
+            throw new ConflictException(
+                $"Journal entry {original.EntryNumber} belongs to a {(JournalSourceType)original.SourceType} document. " +
+                "Reverse it through that document's /reverse endpoint so its status stays consistent.");
+
+        _uow.Begin();
+        try
+        {
+            var reversalId = await ReverseAsync(journalEntryId, request.ReversalDate, request.Reason);
+            await _audit.WriteAsync("JournalEntry", journalEntryId, "Reversed",
+                $"{{\"reversalJournalEntryId\":{reversalId}}}");
+            _uow.Commit();
+
+            return await _journal.GetByIdAsync(reversalId)
+                   ?? throw new InvalidOperationException("Reversal journal entry vanished after commit.");
         }
         catch
         {

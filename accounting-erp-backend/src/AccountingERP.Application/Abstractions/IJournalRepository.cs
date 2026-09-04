@@ -19,4 +19,10 @@ public interface IJournalRepository
     Task<JournalEntryResponse?> GetByIdAsync(int journalEntryId);
 
     Task<PagedResult<JournalEntryResponse>> ListAsync(JournalEntryQuery query);
+
+    /// <summary>The original entry's header basics and lines, for building a reversing entry. Null if it does not exist.</summary>
+    Task<JournalEntryReverseInfo?> GetForReverseAsync(int journalEntryId);
+
+    /// <summary>True if some entry already has <c>ReversesJournalEntryId = journalEntryId</c>.</summary>
+    Task<bool> IsAlreadyReversedAsync(int journalEntryId);
 }

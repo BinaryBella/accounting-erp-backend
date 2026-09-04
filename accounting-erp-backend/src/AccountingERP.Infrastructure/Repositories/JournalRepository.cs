@@ -102,6 +102,33 @@ public sealed class JournalRepository : IJournalRepository
         return new PagedResult<JournalEntryResponse>(items, page.Page, page.PageSize, total);
     }
 
+    public async Task<JournalEntryReverseInfo?> GetForReverseAsync(int journalEntryId)
+    {
+        using var grid = await _uow.Connection.QueryMultipleAsync(new CommandDefinition(
+            JournalSql.GetForReverse, new { JournalEntryId = journalEntryId }, _uow.Transaction));
+
+        var header = await grid.ReadSingleOrDefaultAsync<ReverseHeaderRow>();
+        if (header is null)
+            return null;
+
+        var lines = (await grid.ReadAsync<JournalDraftLine>()).ToList();
+        return new JournalEntryReverseInfo(
+            header.JournalEntryId, header.EntryNumber, header.SourceType, header.SourceId, header.IsReversal, lines);
+    }
+
+    public async Task<bool> IsAlreadyReversedAsync(int journalEntryId) =>
+        await _uow.Connection.ExecuteScalarAsync<bool>(new CommandDefinition(
+            JournalSql.IsAlreadyReversed, new { JournalEntryId = journalEntryId }, _uow.Transaction));
+
+    private sealed class ReverseHeaderRow
+    {
+        public int JournalEntryId { get; set; }
+        public string EntryNumber { get; set; } = default!;
+        public byte SourceType { get; set; }
+        public int? SourceId { get; set; }
+        public bool IsReversal { get; set; }
+    }
+
     private static JournalEntryResponse Map(JournalEntryHeaderRow h, IReadOnlyList<JournalEntryLineResponse> lines) =>
         new(
             h.JournalEntryId,

@@ -64,4 +64,19 @@ OFFSET @Skip ROWS FETCH NEXT @Take ROWS ONLY;
 SELECT COUNT(*)
 FROM   dbo.JournalEntry je
 {ListFilter};";
+
+    // header basics + lines, for posting a mirrored (swapped) entry
+    public const string GetForReverse = @"
+SELECT je.JournalEntryId, je.EntryNumber, je.SourceType, je.SourceId, je.IsReversal
+FROM   dbo.JournalEntry je
+WHERE  je.JournalEntryId = @JournalEntryId;
+
+SELECT jl.AccountId, jl.Debit, jl.Credit, jl.Description, jl.CustomerId, jl.SupplierId
+FROM   dbo.JournalEntryLine jl
+WHERE  jl.JournalEntryId = @JournalEntryId
+ORDER BY jl.LineNumber;";
+
+    public const string IsAlreadyReversed = @"
+SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.JournalEntry WHERE ReversesJournalEntryId = @JournalEntryId)
+            THEN 1 ELSE 0 END;";
 }

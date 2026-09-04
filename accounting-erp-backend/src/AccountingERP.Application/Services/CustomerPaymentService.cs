@@ -20,6 +20,7 @@ public sealed class CustomerPaymentService : ICustomerPaymentService
     private readonly IJournalService _journal;
     private readonly IAuditRepository _audit;
     private readonly IValidator<CreateCustomerPaymentRequest> _validator;
+    private readonly IValidator<ReverseRequest> _reverseValidator;
 
     public CustomerPaymentService(
         IUnitOfWork uow,
@@ -30,7 +31,8 @@ public sealed class CustomerPaymentService : ICustomerPaymentService
         INumberSequenceRepository sequences,
         IJournalService journal,
         IAuditRepository audit,
-        IValidator<CreateCustomerPaymentRequest> validator)
+        IValidator<CreateCustomerPaymentRequest> validator,
+        IValidator<ReverseRequest> reverseValidator)
     {
         _uow = uow;
         _payments = payments;
@@ -41,6 +43,7 @@ public sealed class CustomerPaymentService : ICustomerPaymentService
         _journal = journal;
         _audit = audit;
         _validator = validator;
+        _reverseValidator = reverseValidator;
     }
 
     public Task<PagedResult<CustomerPaymentListItem>> ListAsync(CustomerPaymentQuery query) => _payments.ListAsync(query);
@@ -123,6 +126,53 @@ public sealed class CustomerPaymentService : ICustomerPaymentService
             var journalEntry = await _journal.GetOrNullAsync(journalEntryId)
                                ?? throw new InvalidOperationException("Journal entry vanished after commit.");
             return new PostCustomerPaymentResult(payment, journalEntry);
+        }
+        catch
+        {
+            _uow.Rollback();
+            throw;
+        }
+    }
+
+    // ---- reverse (PLAN §5) -------------------------------------------------
+
+    public async Task<ReverseCustomerPaymentResult> ReverseAsync(int id, ReverseRequest request)
+    {
+        await _reverseValidator.EnsureValidAsync(request);
+
+        var info = await _payments.GetForReverseAsync(id)
+                   ?? throw new NotFoundException("Customer payment", id);
+
+        if (info.Status != (byte)DocumentStatus.Posted)
+            throw new ConflictException($"Receipt {info.PaymentNumber} is not posted, so it cannot be reversed.");
+        if (info.JournalEntryId is not { } originalJournalEntryId)
+            throw new ConflictException($"Receipt {info.PaymentNumber} has no journal entry to reverse.");
+
+        _uow.Begin();
+        try
+        {
+            var reversalJournalEntryId = await _journal.ReverseAsync(originalJournalEntryId, request.ReversalDate, request.Reason);
+
+            // Release each allocation: restore the invoice's outstanding balance.
+            // The PaymentAllocation rows are kept as history; the receipt's Reversed
+            // status already removes it from the Outstanding report.
+            foreach (var allocation in info.Allocations)
+            {
+                _ = await _payments.LockInvoiceAsync(allocation.SalesInvoiceId);
+                await _payments.AddInvoicePaidAmountAsync(allocation.SalesInvoiceId, -Round2(allocation.AllocatedAmount));
+            }
+
+            await _payments.MarkReversedAsync(id);
+            await _audit.WriteAsync("Payment", id, "Reversed",
+                $"{{\"originalJournalEntryId\":{originalJournalEntryId},\"reversalJournalEntryId\":{reversalJournalEntryId}}}");
+
+            _uow.Commit();
+
+            var payment = await _payments.GetByIdAsync(id)
+                          ?? throw new InvalidOperationException("Payment vanished after commit.");
+            var journalEntry = await _journal.GetOrNullAsync(reversalJournalEntryId)
+                               ?? throw new InvalidOperationException("Reversal journal entry vanished after commit.");
+            return new ReverseCustomerPaymentResult(payment, journalEntry);
         }
         catch
         {

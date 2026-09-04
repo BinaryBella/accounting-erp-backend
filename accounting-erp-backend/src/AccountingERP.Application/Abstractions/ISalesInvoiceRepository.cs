@@ -23,5 +23,7 @@ public interface ISalesInvoiceRepository
 
     Task MarkPostedAsync(int salesInvoiceId, int journalEntryId);
 
+    Task MarkReversedAsync(int salesInvoiceId);
+
     Task DeleteAsync(int salesInvoiceId);
 }

@@ -6,39 +6,39 @@ using Dapper;
 
 namespace AccountingERP.Infrastructure.Repositories;
 
-public sealed class CustomerPaymentRepository : ICustomerPaymentRepository
+public sealed class SupplierPaymentRepository : ISupplierPaymentRepository
 {
     private readonly IUnitOfWork _uow;
 
-    public CustomerPaymentRepository(IUnitOfWork uow) => _uow = uow;
+    public SupplierPaymentRepository(IUnitOfWork uow) => _uow = uow;
 
-    public Task<int> InsertAsync(CustomerPaymentInsert p) =>
-        _uow.Connection.QuerySingleAsync<int>(new CommandDefinition(PaymentSql.InsertCustomerReceipt, new
+    public Task<int> InsertAsync(SupplierPaymentInsert p) =>
+        _uow.Connection.QuerySingleAsync<int>(new CommandDefinition(PaymentSql.InsertSupplierPayment, new
         {
             p.PaymentNumber,
             p.PaymentDate,
-            p.CustomerId,
+            p.SupplierId,
             p.PaymentMethodId,
             p.ReferenceNo,
             p.Amount
         }, _uow.Transaction));
 
-    public Task InsertAllocationAsync(int paymentId, int salesInvoiceId, decimal allocatedAmount) =>
-        _uow.Connection.ExecuteAsync(new CommandDefinition(PaymentSql.InsertInvoiceAllocation, new
+    public Task InsertAllocationAsync(int paymentId, int supplierBillId, decimal allocatedAmount) =>
+        _uow.Connection.ExecuteAsync(new CommandDefinition(PaymentSql.InsertBillAllocation, new
         {
             PaymentId = paymentId,
-            SalesInvoiceId = salesInvoiceId,
+            SupplierBillId = supplierBillId,
             AllocatedAmount = allocatedAmount
         }, _uow.Transaction));
 
-    public Task<InvoiceAllocationTarget?> LockInvoiceAsync(int salesInvoiceId) =>
-        _uow.Connection.QuerySingleOrDefaultAsync<InvoiceAllocationTarget>(new CommandDefinition(
-            PaymentSql.LockInvoice, new { SalesInvoiceId = salesInvoiceId }, _uow.Transaction));
+    public Task<BillAllocationTarget?> LockBillAsync(int supplierBillId) =>
+        _uow.Connection.QuerySingleOrDefaultAsync<BillAllocationTarget>(new CommandDefinition(
+            PaymentSql.LockBill, new { SupplierBillId = supplierBillId }, _uow.Transaction));
 
-    public Task AddInvoicePaidAmountAsync(int salesInvoiceId, decimal delta) =>
-        _uow.Connection.ExecuteAsync(new CommandDefinition(PaymentSql.AddInvoicePaidAmount, new
+    public Task AddBillPaidAmountAsync(int supplierBillId, decimal delta) =>
+        _uow.Connection.ExecuteAsync(new CommandDefinition(PaymentSql.AddBillPaidAmount, new
         {
-            SalesInvoiceId = salesInvoiceId,
+            SupplierBillId = supplierBillId,
             Delta = delta
         }, _uow.Transaction));
 
@@ -50,65 +50,65 @@ public sealed class CustomerPaymentRepository : ICustomerPaymentRepository
         _uow.Connection.ExecuteAsync(new CommandDefinition(
             PaymentSql.MarkReversed, new { PaymentId = paymentId }, _uow.Transaction));
 
-    public async Task<CustomerPaymentReverseInfo?> GetForReverseAsync(int paymentId)
+    public async Task<SupplierPaymentReverseInfo?> GetForReverseAsync(int paymentId)
     {
         using var grid = await _uow.Connection.QueryMultipleAsync(new CommandDefinition(
-            PaymentSql.GetForReverse, new { PaymentId = paymentId }, _uow.Transaction));
+            PaymentSql.GetSupplierPaymentForReverse, new { PaymentId = paymentId }, _uow.Transaction));
 
         var header = await grid.ReadSingleOrDefaultAsync<PaymentReverseHeaderRow>();
         if (header is null)
             return null;
 
-        var allocations = (await grid.ReadAsync<PaymentAllocationSnapshot>()).ToList();
-        return new CustomerPaymentReverseInfo(
+        var allocations = (await grid.ReadAsync<SupplierBillAllocationSnapshot>()).ToList();
+        return new SupplierPaymentReverseInfo(
             header.PaymentId, header.PaymentNumber, header.Status, header.JournalEntryId, allocations);
     }
 
-    public async Task<CustomerPaymentResponse?> GetByIdAsync(int paymentId)
+    public async Task<SupplierPaymentResponse?> GetByIdAsync(int paymentId)
     {
         using var grid = await _uow.Connection.QueryMultipleAsync(new CommandDefinition(
-            PaymentSql.GetCustomerReceiptById, new { PaymentId = paymentId }, _uow.Transaction));
+            PaymentSql.GetSupplierPaymentById, new { PaymentId = paymentId }, _uow.Transaction));
 
-        var header = await grid.ReadSingleOrDefaultAsync<CustomerPaymentHeaderRow>();
+        var header = await grid.ReadSingleOrDefaultAsync<SupplierPaymentHeaderRow>();
         if (header is null)
             return null;
 
-        var allocations = (await grid.ReadAsync<CustomerPaymentAllocationResponse>()).ToList();
+        var allocations = (await grid.ReadAsync<SupplierPaymentAllocationResponse>()).ToList();
 
-        return new CustomerPaymentResponse(
-            header.PaymentId, header.PaymentNumber, header.CustomerId, header.CustomerCode, header.CustomerName,
+        return new SupplierPaymentResponse(
+            header.PaymentId, header.PaymentNumber, header.SupplierId, header.SupplierCode, header.SupplierName,
             header.PaymentDate, header.PaymentMethodId, header.PaymentMethod, header.ReferenceNo,
             header.Amount, ((DocumentStatus)header.Status).ToString(),
             header.JournalEntryId, header.PostedAtUtc, header.CreatedAtUtc, allocations);
     }
 
-    public async Task<PagedResult<CustomerPaymentListItem>> ListAsync(CustomerPaymentQuery query)
+    public async Task<PagedResult<SupplierPaymentListItem>> ListAsync(SupplierPaymentQuery query)
     {
         var page = new PageRequest(query.Page, query.PageSize);
-        var parameters = new { query.CustomerId, query.FromDate, query.ToDate, page.Skip, page.Take };
+        var parameters = new { query.SupplierId, query.FromDate, query.ToDate, page.Skip, page.Take };
 
         using var grid = await _uow.Connection.QueryMultipleAsync(
-            new CommandDefinition(PaymentSql.ListCustomerReceipts, parameters, _uow.Transaction));
+            new CommandDefinition(PaymentSql.ListSupplierPayments, parameters, _uow.Transaction));
 
-        var rows = (await grid.ReadAsync<CustomerPaymentListRow>()).ToList();
+        var rows = (await grid.ReadAsync<SupplierPaymentListRow>()).ToList();
         var total = await grid.ReadSingleAsync<int>();
 
         var items = rows
-            .Select(r => new CustomerPaymentListItem(
-                r.PaymentId, r.PaymentNumber, r.CustomerId, r.CustomerName,
+            .Select(r => new SupplierPaymentListItem(
+                r.PaymentId, r.PaymentNumber, r.SupplierId, r.SupplierName,
                 r.PaymentDate, r.PaymentMethod, r.Amount, ((DocumentStatus)r.Status).ToString()))
             .ToList();
 
-        return new PagedResult<CustomerPaymentListItem>(items, page.Page, page.PageSize, total);
+        return new PagedResult<SupplierPaymentListItem>(items, page.Page, page.PageSize, total);
     }
 
-    private sealed class CustomerPaymentHeaderRow
+    private sealed class SupplierPaymentHeaderRow
     {
         public int PaymentId { get; set; }
         public string PaymentNumber { get; set; } = default!;
-        public int CustomerId { get; set; }
-        public string CustomerCode { get; set; } = default!;
-        public string CustomerName { get; set; } = default!;
+        public int SupplierId { get; set; }
+        public string SupplierCode { get; set; } = default!;
+        public string SupplierName { get; set; } = default!;
         public DateOnly PaymentDate { get; set; }
         public byte PaymentMethodId { get; set; }
         public string PaymentMethod { get; set; } = default!;
@@ -120,12 +120,12 @@ public sealed class CustomerPaymentRepository : ICustomerPaymentRepository
         public DateTime CreatedAtUtc { get; set; }
     }
 
-    private sealed class CustomerPaymentListRow
+    private sealed class SupplierPaymentListRow
     {
         public int PaymentId { get; set; }
         public string PaymentNumber { get; set; } = default!;
-        public int CustomerId { get; set; }
-        public string CustomerName { get; set; } = default!;
+        public int SupplierId { get; set; }
+        public string SupplierName { get; set; } = default!;
         public DateOnly PaymentDate { get; set; }
         public string PaymentMethod { get; set; } = default!;
         public decimal Amount { get; set; }

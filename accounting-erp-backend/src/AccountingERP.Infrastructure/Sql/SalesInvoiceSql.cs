@@ -43,6 +43,12 @@ SET    Status         = 2,
        UpdatedAtUtc    = SYSUTCDATETIME()
 WHERE  SalesInvoiceId = @SalesInvoiceId;";
 
+    // Status 2 -> 3 only; no financial column changes, so TR_SalesInvoice_LockPosted does not fire.
+    public const string MarkReversed = @"
+UPDATE dbo.SalesInvoice
+SET    Status = 3, UpdatedAtUtc = SYSUTCDATETIME()
+WHERE  SalesInvoiceId = @SalesInvoiceId;";
+
     // FK_SalesInvoiceLine_Invoice has ON DELETE CASCADE, so the lines go with it.
     public const string Delete = @"
 DELETE FROM dbo.SalesInvoice WHERE SalesInvoiceId = @SalesInvoiceId;";
@@ -107,7 +113,12 @@ ORDER BY sil.LineNumber;";
 
     public const string GetGuard = @"
 SELECT si.SalesInvoiceId, si.Status, si.JournalEntryId, si.AmountPaid,
-       CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.PaymentAllocation pa WHERE pa.SalesInvoiceId = si.SalesInvoiceId)
+       CAST(CASE WHEN EXISTS (
+                 SELECT 1
+                 FROM   dbo.PaymentAllocation pa
+                 JOIN   dbo.Payment p ON p.PaymentId = pa.PaymentId
+                 WHERE  pa.SalesInvoiceId = si.SalesInvoiceId
+                   AND  p.Status <> 3)   -- ignore allocations from reversed receipts
                  THEN 1 ELSE 0 END AS BIT) AS HasAllocations
 FROM   dbo.SalesInvoice si
 WHERE  si.SalesInvoiceId = @SalesInvoiceId;";

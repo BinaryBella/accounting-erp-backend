@@ -2,14 +2,20 @@
    SSIT Practical Assessment — ABC Trading (Pvt) Ltd
    Database Schema (Microsoft SQL Server)
 
-   Run this script against an EMPTY database, e.g.:
-       sqlcmd -S localhost,1433 -U sa -P '<password>' -Q "CREATE DATABASE SsitAccountingDb"
-       sqlcmd -S localhost,1433 -U sa -P '<password>' -d SsitAccountingDb -i 01_schema.sql
+   This script creates the AccountingERPDb database if it does not exist,
+   switches to it, then (re)creates every object. Just run it:
+       sqlcmd -S localhost,1433 -U sa -P '<password>' -I -i 01_schema.sql
 
-   Idempotent: safe to re-run against the same database while developing —
-   section 0 drops every object this script owns, in dependency order,
-   before recreating it.
+   Idempotent: safe to re-run — section 0 drops every object this script
+   owns, in dependency order, before recreating it.
    ===================================================================== */
+
+IF DB_ID('AccountingERPDb') IS NULL
+    CREATE DATABASE AccountingERPDb;
+GO
+
+USE AccountingERPDb;
+GO
 
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
